@@ -72,9 +72,30 @@ CREATE TABLE Ticket (
 ```
 Audit capability: Each ticket shows complete chain: Booking → Flight Selection → Payment → Final Ticket
 
+4. Defense-in-Depth Data Integrity
+Multiple validation layers:
+``` sql
+-- Layer 1: CHECK Constraints
+CONSTRAINT Date_check CHECK (Departure_Date < Arrival_Date)
+
+-- Layer 2: Triggers
+CREATE TRIGGER before_insert_bookings
+BEFORE INSERT ON Bookings FOR EACH ROW
+BEGIN
+    IF NEW.Departure_Date >= NEW.Arrival_Date THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Error: Departure date must be before arrival date';
+    END IF;
+END;
+
+-- Layer 3: Foreign Keys
+FOREIGN KEY (Flight_ID) REFERENCES Flights(Flight_ID)
+```
+Philosophy: Don't rely solely on application validation. Enforce rules at database level so bad data can't enter regardless of how it's submitted.
+
+
 ## ⚙️ Stored Procedures
-#### Update Payment
-Atomically updates payment status and timestamp—critical for preventing race conditions.
+1. UpdatePayment: Atomically updates payment status and timestamp—critical for preventing race conditions.
 ```sql
 CREATE PROCEDURE UpdatePayment(
     IN p_payment_id VARCHAR(255),
@@ -92,8 +113,41 @@ CALL UpdatePayment('P02', '2023-11-30 12:12:15');
 ```
 Why atomic operations matter: Prevents partial updates where status changes but date doesn't, maintaining data consistency.
 
+2. insert_new_passenger
+Standardized passenger registration with built-in validation.
+```sql
+CREATE PROCEDURE insert_new_passenger (
+    IN p_passenger_id VARCHAR(255), 
+    IN p_name VARCHAR(255), 
+    IN p_DOB DATE, 
+    IN p_phone BIGINT, 
+    IN p_email VARCHAR(255)
+)
+BEGIN 
+    INSERT INTO passenger (passenger_id, name, DOB, phone, email) 
+    VALUES (p_passenger_id, p_name, p_DOB, p_phone, p_email);
+END;
+```
+#### Usage
+```sql
+CALL insert_new_passenger('XF67', 'Charles Jack', '1979-08-06', '7834567890', 'charlesbig@yahoo.com');
+```
+
+3. delete_passenger: Safe passenger record removal.
+```sql
+CREATE PROCEDURE delete_passenger (
+    IN selected_passenger VARCHAR(255)
+)
+BEGIN 
+    DELETE FROM passenger 
+    WHERE passenger_id = selected_passenger;
+END;
+```
+Best practice: Foreign key constraints prevent deletion of passengers with active bookings/tickets, maintaining referential integrity.
+
+
 ## 🔐 Triggers
-#### before_insert_bookings
+i. before_insert_bookings
 Enforces business rule: Departure must occur before arrival.
 ```sql
 DELIMITER //
@@ -107,6 +161,26 @@ BEGIN
 END //
 DELIMITER ;
 ```
+
+ii. before_insert_passenger
+Validates email format at database layer.
+``` sql
+DELIMITER //
+CREATE TRIGGER before_insert_passenger
+BEFORE INSERT ON Passenger FOR EACH ROW
+BEGIN
+    IF NEW.Email NOT LIKE '%_@__%.__%' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Error: Invalid email format';
+    END IF;
+END //
+DELIMITER ;
+```
+#### Pattern breakdown: %_@__%.__%
+- At least one character before @
+- At least two characters after @
+- Period with characters after it (domain extension)
+
 
 ## 🚀 Query Optimization
 **Indexes Created:**
@@ -124,7 +198,63 @@ Before/After: Query time for "Find all bookings from Abuja" dropped from 0.8s to
 
 ## Entity Relationship Diagram
  - Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/Database%20ERD.png) for the diagram
- 
+
+
+## 📝 Sample Queries
+Q1: Retrieve all one-way bookings
+```sql
+SELECT * FROM Bookings 
+WHERE Trip_Type = 'one-way';
+```
+Result: Lists reservations without return flights (Arrival_Date NULL)
+
+Q2: Find passengers with contact details and their bookings
+```sql
+SELECT Passenger.*, Ticket.*
+FROM Passenger
+JOIN Ticket ON Passenger.Name = Ticket.Passenger_Name;
+```
+Use case: Customer service looking up passenger booking history
+
+Q3: Get fare for specific flight class
+```sql
+SELECT Fare
+FROM Flights
+WHERE Departure_City = 'Abuja'
+  AND Arrival_City = 'Lagos'
+  AND Class = 'first';
+  ```
+Result: Returns first-class fare for Abuja → Lagos route
+
+Q4: Retrieve tickets with successful payments
+```sql
+SELECT Ticket.*
+FROM Ticket
+JOIN Payment ON Ticket.Payment_ID = Payment.Payment_ID
+WHERE Payment.Payment_Status = 'Y';
+```
+Business logic: Only confirmed payments generate valid tickets
+
+Q5: Calculate average booking lead time
+```sql
+SELECT AVG(DATEDIFF(Departure_Date, Booking_Date)) AS AvgTimeDifference
+FROM Bookings;
+```
+Insight: Shows how far in advance customers book flights (useful for pricing strategies)
+
+Q6: Complete passenger payment verification (Complex JOIN)
+```sql
+SELECT 
+    passenger.name, 
+    ticket.seat_number, 
+    payment.payment_status
+FROM passenger
+JOIN ticket ON passenger.name = ticket.passenger_name
+JOIN payment ON ticket.payment_id = payment.payment_id
+WHERE payment.payment_status = 'Y';
+```
+Use case: Gate agent verification—which passengers have confirmed tickets?
+
 ### Usage
 To use this project, run the SQL script in your preferred database management system, ensuring that the syntax is compatible. Adjustments may be necessary based on your specific database system.
 NB: This booking system was built on MySQL Database
