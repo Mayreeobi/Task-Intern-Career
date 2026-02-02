@@ -1,7 +1,7 @@
 # Airline Booking System Database
 A fully normalized relational database designed to power online airline booking operations, covering the entire booking lifecycle: passenger registration → reservation → payment → ticket issuance.
-- Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airline.sql) for the SQL script
-- 🔗 SQL Script: [View Full SQL Scripts](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airline.sql)
+
+- 🔗 SQL Script: [View Full SQL Scripts](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airlinebooking.sql)
   
 ## Challenge
 Airline needed a relational database to manage online bookings, flights, passengers, payments, and ticket issuance. Existing system stored everything in flat Excel files with massive data redundancy—passenger information repeated in every booking, no referential integrity between bookings and payments, orphaned tickets without valid passenger records. Querying for booking history or payment status required manual VLOOKUP across multiple spreadsheets.
