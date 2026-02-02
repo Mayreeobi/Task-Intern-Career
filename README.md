@@ -1,12 +1,13 @@
 # Airline Booking System Database
-A normalized relational database designed for online airline booking operations, handling the complete booking lifecycle from reservation through payment to ticket issuance.
+A fully normalized relational database designed to power online airline booking operations, covering the entire booking lifecycle: passenger registration → reservation → payment → ticket issuance.
 - Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airline.sql) for the SQL script
+- 🔗 SQL Script: [View Full SQL Scripts](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airline.sql)
   
 ## Challenge
 Airline needed a relational database to manage online bookings, flights, passengers, payments, and ticket issuance. Existing system stored everything in flat Excel files with massive data redundancy—passenger information repeated in every booking, no referential integrity between bookings and payments, orphaned tickets without valid passenger records. Querying for booking history or payment status required manual VLOOKUP across multiple spreadsheets.
 
 ## Solution
-Designed normalized relational database following third normal form (3NF) with 5 core tables (Bookings, Flights, Passengers, Payments, Tickets), proper foreign key relationships, and data integrity constraints. Implemented stored procedures for common operations, triggers for automated validation, and indexes for query optimization. System handles complete booking lifecycle from reservation through payment to ticket issuance.
+Designed normalized relational database following third normal form (3NF) with 6 core tables (passengers, flights, bookings, booking_flights, payments, tickets), proper foreign key relationships, and data integrity constraints. Implemented stored procedures for common operations, triggers for automated validation, and indexes for query optimization. System handles complete booking lifecycle from reservation through payment to ticket issuance.
 
 ## Impact
 - Eliminated data redundancy from flat file system
@@ -17,79 +18,102 @@ Designed normalized relational database following third normal form (3NF) with 5
 #### Tables Summary
 | Table | Purpose | Key Features|
 |--------|-------|------------------------------------|
-| Bookings | Trip Reservations | Trip type (one-way/round), departure/arrival cities and dates |
-| Flights | Flight schedules |  Flight routes, classes, fares, departure/arrival timestamps |
-| Passengers | Customer data |  Demographics, contact info with email validation  |
-| Payments |Transactions |  Payment status (Y/N), transaction timestamps  |
-| Tickets | Issued tickets |  Junction entity linking bookings, payments, flights, passengers  |
+| Passengers | Customer data |  Email validation, demographic info  |
+| Flights | Flight schedules |  Routes, class, fares, timestampss |
+| Bookings | Trip Reservations |  Trip type (one-way/round), booking dates |
+| Booking_flights | Junction table |  Supports multi-leg & round trips |
+| Payments |Transactions |  Status tracking, payment methods  |
+| Tickets | Issued tickets |  Seat assignment, audit trail |
 
 
-## Key Design Decisions
-1. Payment → Flight Relationship (Not Payment → Booking)
-Why it matters: Payments occur after flight selection, so the natural foreign key is to Flights, not Bookings.
+## 🏗️ Key Design Decisions
+1. Payments Linked to Bookings
+Why it matters: Payments finalize a reservation, not an individual flight leg
 
 ```sql
-CREATE TABLE Payment (
-    Payment_ID VARCHAR(255) NOT NULL PRIMARY KEY,
-    Flight_ID VARCHAR(255) NOT NULL,  -- Links to Flight, not Booking
-    Payment_Date DATETIME NOT NULL,
-    Payment_Status CHAR(1) DEFAULT 'N' CHECK (Payment_Status IN ('Y','N')),
-    FOREIGN KEY (Flight_ID) REFERENCES Flights(Flight_ID)
+CREATE TABLE payments (
+    payment_id VARCHAR(50) PRIMARY KEY,
+    booking_id INT UNSIGNED NOT NULL,
+    payment_date DATETIME NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_status ENUM ('Success','Failed') NOT NULL,
+    payment_method ENUM ('Card','Transfer','Wallet') DEFAULT 'Card',
+
+    CONSTRAINT fk_payment_booking
+        FOREIGN KEY (booking_id)
+        REFERENCES bookings(booking_id)
+        ON DELETE CASCADE
 );
 ```
-Business logic: Customer selects flight → Payment processes for that flight → Booking confirms with payment reference.
+Business logic: Passenger → Booking → Payment → Ticket issuance
+This ensures:
+- No ticket without payment
+- Automatic cleanup on booking deletion
+- Accurate financial reporting
 
 2. Conditional NULL for One-Way vs. Round-Trip
-Elegant solution: Use NULL semantics instead of dummy dates or separate tables.
+Elegant solution: Handled using trip_type + booking_flights, not duplicate schemas.
 
 ```sql
-CREATE TABLE Bookings (
-    Trip_Type VARCHAR(255) NOT NULL,
-    Departure_Date DATETIME NOT NULL,
-    Arrival_Date DATETIME,  -- NULL for one-way, populated for round-trip
-    CONSTRAINT Date_check CHECK (Departure_Date < Arrival_Date)
+CREATE TABLE bookings (
+    booking_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    passenger_id VARCHAR(50) NOT NULL,
+    trip_type ENUM ('One_Way','Round_Trip') NOT NULL,
+    booking_date DATETIME NOT NULL,
+    booking_status ENUM ('Confirmed','Cancelled','Pending') DEFAULT 'Confirmed',
+
+    CONSTRAINT fk_booking_passenger
+        FOREIGN KEY (passenger_id)
+        REFERENCES passengers(passenger_id)
+        ON DELETE CASCADE
 );
 ```
 #### Why it works:
-- One-way trips: Arrival_Date = NULL
-- Round-trip: Arrival_Date populated with CHECK constraint ensuring logical date order
-- Database NULL semantics naturally represent "not applicable"
+- One-way bookings → single flight segment
+- Round-trip bookings → multiple segments
+- No dummy dates or duplicated tables
+- Scales naturally to multi-leg itineraries
 
 3. Tickets as Complete Audit Trail
-Junction entity design: Tickets reference multiple entities to create full booking lifecycle history.
+
 ```sql
-CREATE TABLE Ticket (
-    Ticket_ID VARCHAR(255) NOT NULL PRIMARY KEY,
-    Passenger_Name VARCHAR(255),
-    Seat_Number VARCHAR(10),
-    Booking_ID INT UNSIGNED,      -- When was reservation made?
-    Payment_ID VARCHAR(255),       -- Which payment confirmed it?
-    Flight_ID VARCHAR(255),        -- Which flight is this for?
-    FOREIGN KEY (Booking_ID) REFERENCES Bookings(Booking_ID),
-    FOREIGN KEY (Payment_ID) REFERENCES Payment(Payment_ID),
-    FOREIGN KEY (Flight_ID) REFERENCES Flights(Flight_ID)
+CREATE TABLE payments (
+    payment_id VARCHAR(50) PRIMARY KEY,
+    booking_id INT UNSIGNED NOT NULL,
+    payment_date DATETIME NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_status ENUM ('Success','Failed') NOT NULL,
+    payment_method ENUM ('Card','Transfer','Wallet') DEFAULT 'Card',
+
+    CONSTRAINT fk_payment_booking
+        FOREIGN KEY (booking_id)
+        REFERENCES bookings(booking_id)
+        ON DELETE CASCADE
 );
 ```
-Audit capability: Each ticket shows complete chain: Booking → Flight Selection → Payment → Final Ticket
+Audit capability: Each ticket shows complete chain: Passenger → Booking → Flight → Payment → Ticket
 
 4. Defense-in-Depth Data Integrity
-Multiple validation layers:
 ``` sql
 -- Layer 1: CHECK Constraints
-CONSTRAINT Date_check CHECK (Departure_Date < Arrival_Date)
+CONSTRAINT chk_flight_dates
+    CHECK (departure_datetime < arrival_datetime),
 
 -- Layer 2: Triggers
-CREATE TRIGGER before_insert_bookings
-BEFORE INSERT ON Bookings FOR EACH ROW
+DELIMITER //
+CREATE TRIGGER before_insert_flights
+BEFORE INSERT ON flights FOR EACH ROW
 BEGIN
-    IF NEW.Departure_Date >= NEW.Arrival_Date THEN
+    IF NEW.departure_datetime >= NEW.arrival_datetime THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Error: Departure date must be before arrival date';
     END IF;
-END;
+END //
+DELIMITER ;
 
 -- Layer 3: Foreign Keys
-FOREIGN KEY (Flight_ID) REFERENCES Flights(Flight_ID)
+FOREIGN KEY (booking_id) REFERENCES bookings(booking_id)
+FOREIGN KEY (flight_id) REFERENCES flights(flight_id)
 ```
 Philosophy: Don't rely solely on application validation. Enforce rules at database level so bad data can't enter regardless of how it's submitted.
 
@@ -97,64 +121,69 @@ Philosophy: Don't rely solely on application validation. Enforce rules at databa
 ## ⚙️ Stored Procedures
 1. UpdatePayment: Atomically updates payment status and timestamp—critical for preventing race conditions.
 ```sql
-CREATE PROCEDURE UpdatePayment(
-    IN p_payment_id VARCHAR(255),
-    IN p_payment_date DATETIME
+DELIMITER //
+
+CREATE PROCEDURE UpdatePayment (
+    IN p_payment_id VARCHAR(50),
+    IN p_status ENUM('Success','Failed','Refunded')
 )
 BEGIN
-    UPDATE Payment
-    SET Payment_Status = 'Y', Payment_Date = p_payment_date
-    WHERE Payment_ID = p_payment_id;
-END;
-```
-#### Usage
-```sql
-CALL UpdatePayment('P02', '2023-11-30 12:12:15');
+    UPDATE payments
+    SET payment_status = p_status,
+        payment_date = CURRENT_TIMESTAMP
+    WHERE payment_id = p_payment_id;
+END //
+
+DELIMITER ;
 ```
 Why atomic operations matter: Prevents partial updates where status changes but date doesn't, maintaining data consistency.
 
-2. insert_new_passenger
-Standardized passenger registration with built-in validation.
+2. insert_new_passenger: Standardized passenger registration with built-in validation.
 ```sql
+DELIMITER //
+
 CREATE PROCEDURE insert_new_passenger (
-    IN p_passenger_id VARCHAR(255), 
-    IN p_name VARCHAR(255), 
-    IN p_DOB DATE, 
-    IN p_phone BIGINT, 
+    IN p_passenger_id VARCHAR(50),
+    IN p_full_name VARCHAR(255),
+    IN p_dob DATE,
+    IN p_phone VARCHAR(20),
     IN p_email VARCHAR(255)
 )
-BEGIN 
-    INSERT INTO passenger (passenger_id, name, DOB, phone, email) 
-    VALUES (p_passenger_id, p_name, p_DOB, p_phone, p_email);
-END;
-```
-#### Usage
-```sql
-CALL insert_new_passenger('XF67', 'Charles Jack', '1979-08-06', '7834567890', 'charlesbig@yahoo.com');
+BEGIN
+    INSERT INTO passengers
+    (passenger_id, full_name, date_of_birth, phone, email)
+    VALUES
+    (p_passenger_id, p_full_name, p_dob, p_phone, p_email);
+END //
+
+DELIMITER ;
 ```
 
 3. delete_passenger: Safe passenger record removal.
 ```sql
+DELIMITER //
+
 CREATE PROCEDURE delete_passenger (
-    IN selected_passenger VARCHAR(255)
+    IN p_passenger_id VARCHAR(50)
 )
-BEGIN 
-    DELETE FROM passenger 
-    WHERE passenger_id = selected_passenger;
-END;
+BEGIN
+    DELETE FROM passengers
+    WHERE passenger_id = p_passenger_id;
+END //
+
+DELIMITER ;
 ```
 Best practice: Foreign key constraints prevent deletion of passengers with active bookings/tickets, maintaining referential integrity.
 
 
 ## 🔐 Triggers
-i. before_insert_bookings
-Enforces business rule: Departure must occur before arrival.
+i. before_insert_bookings: Enforces business rule: Departure must occur before arrival.
 ```sql
 DELIMITER //
-CREATE TRIGGER before_insert_bookings
-BEFORE INSERT ON Bookings FOR EACH ROW
+CREATE TRIGGER before_insert_flights
+BEFORE INSERT ON flights FOR EACH ROW
 BEGIN
-    IF NEW.Departure_Date >= NEW.Arrival_Date THEN
+    IF NEW.departure_datetime >= NEW.arrival_datetime THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Error: Departure date must be before arrival date';
     END IF;
@@ -162,18 +191,20 @@ END //
 DELIMITER ;
 ```
 
-ii. before_insert_passenger
-Validates email format at database layer.
+ii. before_insert_passenger: Validates email format at database layer.
 ``` sql
 DELIMITER //
-CREATE TRIGGER before_insert_passenger
-BEFORE INSERT ON Passenger FOR EACH ROW
+
+CREATE TRIGGER trg_validate_email
+BEFORE INSERT ON passengers
+FOR EACH ROW
 BEGIN
-    IF NEW.Email NOT LIKE '%_@__%.__%' THEN
+    IF NEW.email NOT LIKE '%_@__%.__%' THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Error: Invalid email format';
+        SET MESSAGE_TEXT = 'Invalid email format';
     END IF;
 END //
+
 DELIMITER ;
 ```
 #### Pattern breakdown: %_@__%.__%
@@ -185,9 +216,10 @@ DELIMITER ;
 ## 🚀 Query Optimization
 **Indexes Created:**
 ```sql
-CREATE INDEX Index_Bookings_Departure_city ON Bookings(Departure_City);
-CREATE INDEX Index_Flights_Class ON Flights(Class);
-CREATE INDEX Index_Passenger_DOB ON Passenger(DOB);
+CREATE INDEX idx_booking_passenger ON bookings(passenger_id);
+CREATE INDEX idx_flight_route ON flights(departure_city, arrival_city);
+CREATE INDEX idx_flight_departure ON flights(departure_datetime);
+CREATE INDEX idx_payment_status ON payments(payment_status);
 ```
 #### Rationale:
 - Departure_City: Frequent filtering on departure location
@@ -200,58 +232,41 @@ Before/After: Query time for "Find all bookings from Abuja" dropped from 0.8s to
  - Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/Database%20ERD.png) for the diagram
 
 
-## 📝 Sample Queries
-Q1: Retrieve all one-way bookings
+## 📝 Example Analytical Query
+Q1: Average Booking Lead Time
 ```sql
-SELECT * FROM Bookings 
-WHERE Trip_Type = 'one-way';
-```
-Result: Lists reservations without return flights (Arrival_Date NULL)
-
-Q2: Find passengers with contact details and their bookings
-```sql
-SELECT Passenger.*, Ticket.*
-FROM Passenger
-JOIN Ticket ON Passenger.Name = Ticket.Passenger_Name;
-```
-Use case: Customer service looking up passenger booking history
-
-Q3: Get fare for specific flight class
-```sql
-SELECT Fare
-FROM Flights
-WHERE Departure_City = 'Abuja'
-  AND Arrival_City = 'Lagos'
-  AND Class = 'first';
+SELECT 
+    AVG(DATEDIFF(f.departure_datetime, b.booking_date)) AS avg_lead_time_days
+FROM bookings b
+JOIN booking_flights bf ON b.booking_id = bf.booking_id
+JOIN flights f ON bf.flight_id = f.flight_id
+WHERE bf.segment_order = 1;
   ```
-Result: Returns first-class fare for Abuja → Lagos route
+Business Insight:
+Measures how early customers book — critical for pricing and demand forecasting.
 
-Q4: Retrieve tickets with successful payments
+Q2: Retrieve tickets with successful payments
 ```sql
-SELECT Ticket.*
-FROM Ticket
-JOIN Payment ON Ticket.Payment_ID = Payment.Payment_ID
-WHERE Payment.Payment_Status = 'Y';
+SELECT t.*
+FROM tickets t
+JOIN booking_flights bf ON t.booking_flight_id = bf.booking_flight_id
+JOIN bookings b ON bf.booking_id = b.booking_id
+JOIN payments p ON b.booking_id = p.booking_id
+WHERE p.payment_status = 'SUCCESS';
 ```
 Business logic: Only confirmed payments generate valid tickets
 
-Q5: Calculate average booking lead time
-```sql
-SELECT AVG(DATEDIFF(Departure_Date, Booking_Date)) AS AvgTimeDifference
-FROM Bookings;
-```
-Insight: Shows how far in advance customers book flights (useful for pricing strategies)
-
-Q6: Complete passenger payment verification (Complex JOIN)
+Q3:  Complete passenger payment verification (Complex JOIN)
 ```sql
 SELECT 
-    passenger.name, 
-    ticket.seat_number, 
-    payment.payment_status
-FROM passenger
-JOIN ticket ON passenger.name = ticket.passenger_name
-JOIN payment ON ticket.payment_id = payment.payment_id
-WHERE payment.payment_status = 'Y';
+    p.full_name,
+    p.email,
+    t.ticket_id,
+    t.seat_number
+FROM passengers p
+JOIN bookings b ON p.passenger_id = b.passenger_id
+JOIN booking_flights bf ON b.booking_id = bf.booking_id
+JOIN tickets t ON bf.booking_flight_id = t.booking_flight_id;
 ```
 Use case: Gate agent verification—which passengers have confirmed tickets?
 
