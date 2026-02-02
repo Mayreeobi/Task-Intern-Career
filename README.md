@@ -229,7 +229,7 @@ CREATE INDEX idx_payment_status ON payments(payment_status);
 Before/After: Query time for "Find all bookings from Abuja" dropped from 0.8s to 0.02s with index.
 
 ## Entity Relationship Diagram
- - Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/Database%20ERD.png) for the diagram
+ - Click [Here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/airlinebookingERD.png) for the diagram
 
 
 ## 📝 Example Analytical Query
