@@ -274,37 +274,3 @@ Use case: Gate agent verification—which passengers have confirmed tickets?
 To use this project, run the SQL script in your preferred database management system, ensuring that the syntax is compatible. Adjustments may be necessary based on your specific database system.
 NB: This booking system was built on MySQL Database
 
-
-------------------------------------------------------------------------
-
-
-
-## Task 2: SQL Data Analysis: Spotify-Data 1921-2020
-Description: Perform data analysis using SQL queries focusing on extracting meaningful insights and patterns.
-*  Dataset link : [here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/%F0%9F%8E%A7%F0%9F%93%BB%20Spotify%20data%20-20240113T150317Z-001.zip)
-*  Click here for the SQL script [here](https://github.com/Mayreeobi/Task-Intern-Career/blob/main/Spotify.sql)
-
-## Key Questions
--	What is the total number of songs?
--	What is the number of songs released by year?
--	10 most popular songs and artists?
--	What is the percentage of the songs released in 2020? 
--	Determine the “danceability” of each song? 
--	How many songs fall into each danceable group?
--	Which artist and song has the longest song duration?
--	What is the average song duration?
-- Songs with duration longer than the average song duration?
-- Most recently released songs.
-- What is the distribution of each song key?
-- Top 5 artists with the highest average acousticness
-- What is the song with the highest average liveness?
-
-## Insights:
-- Total number of songs was 169,909 
-- Decade-wise Song Releases: The 1960s, 70s, 80s, 90s and 2000s witnessed a substantial release of 20,000 songs each while the 2020s marked the lowest with a modest 1,750 releases.
-- “Blinding Light” by The Weekend claimed the top spot as the most popular song with a perfect popularity rate of 100. 
-- In the year 2020, songs released accounted for a mere 2.21% of the entire dataset.
-- Danceability breakdown: Among the danceability categories, 69,565 songs fell into the danceable group. Followed closely, the least danceable category comprised 50,526 songs. The most danceable group featured 32,557 songs whereas the ‘Not danceable’ group had 17,261 songs. 
-- The average duration of songs stands at is 3.36 minutes.
-- The title for the longest song duration goes to “Psychological Ultimate Seashore” by Environments at 59 minutes 17 seconds. 
-- “Up on Cripple Creek – Concert Version “by The Band claims the title for the song with the  highest average liveness.
